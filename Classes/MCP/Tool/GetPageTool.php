@@ -23,6 +23,7 @@ use TYPO3\CMS\Core\Domain\Repository\PageRepository;
 use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\LanguageAspect;
 use Hn\McpServer\MCP\Tool\Record\AbstractRecordTool;
+use Hn\McpServer\Service\PageAccessService;
 use Hn\McpServer\Service\SiteInformationService;
 use Hn\McpServer\Service\LanguageService as McpLanguageService;
 use Hn\McpServer\Utility\RecordFormattingUtility;
@@ -106,11 +107,12 @@ class GetPageTool extends AbstractRecordTool
         // Handle language parameter
         $languageId = 0;
         if (isset($params['language'])) {
-            // Convert ISO code to language UID
-            $languageId = $this->languageService->getUidFromIsoCode($params['language']);
-            if ($languageId === null) {
-                throw new \InvalidArgumentException('Unknown language code: ' . $params['language']);
-            }
+            // Resolve in the site of the requested page; for URLs the code has to
+            // be unambiguous across sites, since the page is not known yet
+            $languageId = $this->languageService->resolveLanguageUid(
+                $params['language'],
+                isset($params['uid']) ? (int)$params['uid'] : null
+            );
         } elseif (isset($params['languageId'])) {
             // Backward compatibility with numeric languageId
             $languageId = (int)$params['languageId'];
@@ -131,6 +133,11 @@ class GetPageTool extends AbstractRecordTool
 
         if ($uid <= 0) {
             throw new \InvalidArgumentException('Invalid page UID or URL. Please provide a valid page ID or URL.');
+        }
+
+        // Same answer for missing pages and pages outside the user's DB mounts
+        if (!GeneralUtility::makeInstance(PageAccessService::class)->isPageReadable($uid)) {
+            throw new \InvalidArgumentException('Page not found or outside your page mounts: ' . $uid);
         }
 
         // Get page data (with language overlay if applicable)
@@ -281,11 +288,12 @@ class GetPageTool extends AbstractRecordTool
         $result = [];
         foreach ($translations as $translation) {
             $languageId = (int)$translation['sys_language_uid'];
-            $isoCode = $this->languageService->getIsoCodeFromUid($languageId);
+            $isoCode = $this->languageService->getIsoCodeFromUid($languageId, $pageUid);
             if ($isoCode) {
                 $result[] = [
                     'languageId' => $languageId,
                     'isoCode' => $isoCode,
+                    'label' => $this->languageService->formatLanguage($languageId, $pageUid),
                     'title' => $translation['title'],
                 ];
             }
@@ -511,8 +519,7 @@ class GetPageTool extends AbstractRecordTool
         
         // Add language/translation information
         if ($languageId > 0) {
-            $isoCode = $this->languageService->getIsoCodeFromUid($languageId) ?? 'unknown';
-            $result .= "Language: " . strtoupper($isoCode) . " (ID: $languageId)\n";
+            $result .= "Language: " . $this->languageService->formatLanguage($languageId, (int)($pageData['uid'] ?? 0)) . "\n";
             $result .= "Translated: " . (($pageData['_translated'] ?? false) ? 'Yes' : 'No') . "\n";
         }
         
@@ -521,7 +528,7 @@ class GetPageTool extends AbstractRecordTool
             $result .= "Available Translations: ";
             $translationList = [];
             foreach ($translations as $translation) {
-                $translationList[] = strtoupper($translation['isoCode']);
+                $translationList[] = $translation['label'];
             }
             $result .= implode(', ', $translationList) . "\n";
         }

@@ -53,7 +53,7 @@ class WriteTableTool extends AbstractRecordTool
 
         $hasMultipleLanguages = count($this->languageService->getAvailableIsoCodes()) > 1;
         $languageHint = $hasMultipleLanguages
-            ? ' Language fields (sys_language_uid) can be provided as ISO codes (e.g., "de", "fr") instead of numeric IDs.'
+            ? ' Language fields (sys_language_uid) can be provided as language codes (e.g., "de", or "de-AT" where a site has several variants of a language) instead of numeric IDs.'
             : '';
 
         return [
@@ -210,13 +210,14 @@ class WriteTableTool extends AbstractRecordTool
          * This conversion happens automatically for any table that has a sys_language_uid field.
          * The available ISO codes depend on the site configuration.
          */
-        // Convert sys_language_uid from ISO code to UID if present
-        if (!empty($data) && isset($data['sys_language_uid']) && is_string($data['sys_language_uid'])) {
-            $languageUid = $this->languageService->getUidFromIsoCode($data['sys_language_uid']);
-            if ($languageUid === null) {
-                throw new ValidationException(['Unknown language code: ' . $data['sys_language_uid']]);
-            }
-            $data['sys_language_uid'] = $languageUid;
+        // Convert sys_language_uid from a language code to its UID, resolved in the
+        // site of the target page: the same code can mean different languages on
+        // different sites. Numeric IDs are checked against that site as well.
+        if (!empty($data) && isset($data['sys_language_uid']) && (is_string($data['sys_language_uid']) || is_int($data['sys_language_uid']))) {
+            $data['sys_language_uid'] = $this->resolveLanguageField(
+                $data['sys_language_uid'],
+                $this->getLanguageContextPageId($table, $action, $uid, $pid)
+            );
         }
 
         // Validate table access using TableAccessService
@@ -340,6 +341,11 @@ class WriteTableTool extends AbstractRecordTool
         $validationResult = $this->validateRecordData($table, $data, 'create', null, $pid);
         if ($validationResult !== true) {
             return $this->createErrorResult('Validation error: ' . $validationResult);
+        }
+
+        $workspaceError = $this->getMissingWorkspaceError($table);
+        if ($workspaceError !== null) {
+            return $this->createErrorResult($workspaceError);
         }
         
         // Extract inline relations before converting data
@@ -539,6 +545,11 @@ class WriteTableTool extends AbstractRecordTool
             return $this->createErrorResult('Validation error: ' . $validationResult);
         }
 
+        $workspaceError = $this->getMissingWorkspaceError($table);
+        if ($workspaceError !== null) {
+            return $this->createErrorResult($workspaceError);
+        }
+
         // Extract pid as a special field — it's not a TCA column, but setting it
         // on update should move the record to the new page via DataHandler's cmdmap.
         $targetPid = null;
@@ -646,6 +657,11 @@ class WriteTableTool extends AbstractRecordTool
      */
     protected function deleteRecord(string $table, int $uid): CallToolResult
     {
+        $workspaceError = $this->getMissingWorkspaceError($table);
+        if ($workspaceError !== null) {
+            return $this->createErrorResult($workspaceError);
+        }
+
         // Resolve the live UID to workspace UID
         $workspaceUid = $this->resolveToWorkspaceUid($table, $uid);
 
@@ -993,6 +1009,11 @@ class WriteTableTool extends AbstractRecordTool
      */
     protected function translateRecord(string $table, int $uid, int $targetLanguageUid, array $data = []): CallToolResult
     {
+        $workspaceError = $this->getMissingWorkspaceError($table);
+        if ($workspaceError !== null) {
+            return $this->createErrorResult($workspaceError);
+        }
+
         // Check if table supports translations
         $languageField = $this->tableAccessService->getLanguageFieldName($table);
         if (!$languageField) {
@@ -1016,6 +1037,28 @@ class WriteTableTool extends AbstractRecordTool
             return $this->createErrorResult('Cannot translate a record that is already a translation. Translate the original record instead.');
         }
 
+        // The target must be a translation language of the record's site. Localizing
+        // into the default language (or into the record's own language) makes
+        // DataHandler copy the record and its existing translations as new
+        // default-language records instead of creating a translation.
+        $sitePageId = $table === 'pages' ? $uid : (int)($record['pid'] ?? 0);
+        $recordLanguageUid = (int)($record[$languageField] ?? 0);
+        if ($targetLanguageUid <= 0 || $targetLanguageUid === $recordLanguageUid) {
+            return $this->createErrorResult(sprintf(
+                'Cannot translate into %s: choose a translation language of the site. Valid languages: %s',
+                $this->languageService->formatLanguage($targetLanguageUid, $sitePageId),
+                $this->languageService->describeLanguages($sitePageId)
+            ));
+        }
+        $siteLanguageUids = $this->languageService->getLanguageUidsForPage($sitePageId);
+        if ($siteLanguageUids !== null && !in_array($targetLanguageUid, $siteLanguageUids, true)) {
+            return $this->createErrorResult(sprintf(
+                'Language %d is not configured for the site of this record. Valid languages: %s',
+                $targetLanguageUid,
+                $this->languageService->describeLanguages($sitePageId)
+            ));
+        }
+
         // Check if translation already exists
         $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
             ->getQueryBuilderForTable($table);
@@ -1032,7 +1075,7 @@ class WriteTableTool extends AbstractRecordTool
             ->fetchOne();
 
         if ($existingTranslation) {
-            $targetIsoCode = $this->languageService->getIsoCodeFromUid($targetLanguageUid) ?? $targetLanguageUid;
+            $targetIsoCode = $this->languageService->getIsoCodeFromUid($targetLanguageUid, $sitePageId) ?? $targetLanguageUid;
             return $this->createErrorResult('Translation already exists for language "' . $targetIsoCode . '" (UID: ' . $existingTranslation . ')');
         }
 
@@ -1108,7 +1151,7 @@ class WriteTableTool extends AbstractRecordTool
                 ->fetchOne();
         }
 
-        $targetIsoCode = $this->languageService->getIsoCodeFromUid($targetLanguageUid) ?? $targetLanguageUid;
+        $targetIsoCode = $this->languageService->getIsoCodeFromUid($targetLanguageUid, $sitePageId) ?? $targetLanguageUid;
 
         // Apply the translated field values that came with the call (the schema
         // documents `data` as required for translate). DataHandler's localize
@@ -1141,7 +1184,52 @@ class WriteTableTool extends AbstractRecordTool
             'sourceUid' => $uid,
             'translationUid' => $newTranslationUid ?: 'Translation created but UID not found',
             'targetLanguage' => $targetIsoCode,
+            'targetLanguageLabel' => $this->languageService->formatLanguage($targetLanguageUid, $sitePageId),
         ]);
+    }
+
+    /**
+     * Page whose site decides which languages a write may use: the target page
+     * on create, the record's page on update and translate (the page itself for
+     * the pages table).
+     */
+    protected function getLanguageContextPageId(string $table, string $action, ?int $uid, ?int $pid): ?int
+    {
+        if ($action === 'create') {
+            return $pid;
+        }
+        if ($uid === null || $uid <= 0) {
+            return $pid;
+        }
+        if ($table === 'pages') {
+            return $uid;
+        }
+        $record = BackendUtility::getRecord($table, $uid, 'pid');
+        return is_array($record) ? (int)$record['pid'] : $pid;
+    }
+
+    /**
+     * Turn a sys_language_uid value (language code or numeric ID) into the
+     * numeric ID valid for the site of $contextPageId.
+     */
+    protected function resolveLanguageField(string|int $value, ?int $contextPageId): int
+    {
+        if (is_int($value) || preg_match('/^-?\d+$/', trim($value))) {
+            $languageUid = (int)$value;
+            // Numeric IDs are only checked when the page belongs to a site with
+            // languages; without one there is nothing to check against.
+            $siteLanguageUids = $contextPageId !== null
+                ? $this->languageService->getLanguageUidsForPage($contextPageId)
+                : null;
+            if ($siteLanguageUids === null || $siteLanguageUids === [] || $languageUid === -1 || in_array($languageUid, $siteLanguageUids, true)) {
+                return $languageUid;
+            }
+        }
+        try {
+            return $this->languageService->resolveLanguageUid($value, $contextPageId);
+        } catch (\InvalidArgumentException $e) {
+            throw new ValidationException([$e->getMessage()], $e);
+        }
     }
 
     /**
@@ -2810,6 +2898,22 @@ class WriteTableTool extends AbstractRecordTool
         $data[$languageField] = 0;
 
         return $data;
+    }
+
+    /**
+     * Never fall back to live: when no workspace could be selected or created,
+     * DataHandler would write straight to live for every user that keeps the
+     * core "live editing" permission.
+     *
+     * @return string|null Error message if no workspace is active, null otherwise
+     */
+    protected function getMissingWorkspaceError(string $table): ?string
+    {
+        if (!$this->isTableWorkspaceCapable($table) || (int)($GLOBALS['BE_USER']->workspace ?? 0) > 0) {
+            return null;
+        }
+        return 'Permission denied: no workspace is available for your account and changes are never written to live, '
+            . 'so the change was not saved. Ask an administrator to add you to a workspace.';
     }
 
     /**
