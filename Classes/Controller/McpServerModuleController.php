@@ -9,13 +9,16 @@ use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Backend\Template\ModuleTemplateFactory;
 use TYPO3\CMS\Backend\Routing\UriBuilder;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
+use TYPO3\CMS\Core\Configuration\ConfigurationManager;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Core\Page\PageRenderer;
 use TYPO3\CMS\Core\Http\JsonResponse;
 use TYPO3\CMS\Core\Http\HtmlResponse;
+use TYPO3\CMS\Core\Http\Response;
 use Hn\McpServer\Http\RequestUrlTrait;
 use Hn\McpServer\MCP\ToolRegistry;
+use Hn\McpServer\Service\McpbBundleService;
 use Hn\McpServer\Service\OAuthService;
 use Hn\McpServer\Service\WorkspaceContextService;
 
@@ -32,7 +35,8 @@ class McpServerModuleController
         private readonly PageRenderer $pageRenderer,
         private readonly OAuthService $oauthService,
         private readonly WorkspaceContextService $workspaceContextService,
-        private readonly UriBuilder $uriBuilder
+        private readonly UriBuilder $uriBuilder,
+        private readonly McpbBundleService $mcpbBundleService
     ) {}
 
     public function mainAction(ServerRequestInterface $request): ResponseInterface
@@ -105,6 +109,7 @@ class McpServerModuleController
             'wellKnownAuthServerUrl' => $wellKnownAuthServerUrl,
             'wellKnownProtectedResourceUrl' => $wellKnownProtectedResourceUrl,
             'createWorkspaceUrl' => $createWorkspaceUrl,
+            'mcpbDownloadUrl' => (string)$this->uriBuilder->buildUriFromRoute('user_mcp_server.download_mcpb'),
         ];
         
         // Include CSS for endpoint status indicators
@@ -206,6 +211,54 @@ class McpServerModuleController
         }
     }
     
+    /**
+     * Claude Desktop extension "TYPO3 MCP Connector" (.mcpb) with this site's URL pre-filled.
+     * Contains no token or other secret, the user enters the token on install.
+     */
+    public function downloadMcpbAction(ServerRequestInterface $request): ResponseInterface
+    {
+        if (!$this->getBackendUser()) {
+            return new HtmlResponse('Access denied', 403);
+        }
+
+        $bundle = $this->mcpbBundleService->build(
+            $this->getRequestBaseUrl($request),
+            $this->getConfiguredSiteName()
+        );
+
+        $response = (new Response())
+            ->withHeader('Content-Type', 'application/zip')
+            ->withHeader('Content-Disposition', $this->buildAttachmentDisposition($bundle['filename']))
+            ->withHeader('Content-Length', (string)strlen($bundle['content']))
+            ->withHeader('Cache-Control', 'no-store');
+        $response->getBody()->write($bundle['content']);
+        return $response;
+    }
+
+    /**
+     * RFC 6266: ASCII fallback plus the UTF-8 name for site names with umlauts.
+     */
+    private function buildAttachmentDisposition(string $filename): string
+    {
+        $asciiFallback = (string)preg_replace('/[^\x20-\x7E]|["\\\\]/', '_', $filename);
+        return sprintf('attachment; filename="%s"; filename*=UTF-8\'\'%s', $asciiFallback, rawurlencode($filename));
+    }
+
+    /**
+     * Site name as written in settings.php. The runtime value may carry
+     * additions from additional.php (environment, database name, server IP)
+     * that do not belong in a file name.
+     */
+    private function getConfiguredSiteName(): string
+    {
+        try {
+            return (string)GeneralUtility::makeInstance(ConfigurationManager::class)
+                ->getLocalConfigurationValueByPath('SYS/sitename');
+        } catch (\Throwable) {
+            return '';
+        }
+    }
+
     private function getSiteName(): string
     {
         return $GLOBALS['TYPO3_CONF_VARS']['SYS']['sitename'] ?? 'TYPO3 MCP Server';

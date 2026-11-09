@@ -165,13 +165,13 @@ RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]</code></pre>
                                 <!-- Claude Desktop Instructions -->
                                 <div class="tab-pane show active" id="claude-desktop" role="tabpanel" aria-labelledby="claude-desktop-pill">
                                     <h5>🚀 Claude Desktop Integration</h5>
-                                    <p>To connect Claude Desktop to this TYPO3 instance:</p>
                                     <ol>
-                                        <li>In Claude Desktop, go to <strong>Settings → Integrations</strong></li>
-                                        <li>Click <strong>"Add Integration"</strong></li>
-                                        <li>Enter Integration Name: <code>{siteName}</code></li>
-                                        <li>Paste the Server URL: <code>{baseUrl}/mcp</code></li>
-                                        <li>Claude Desktop will automatically handle OAuth authentication</li>
+                                        <li>
+                                            Download the extension:
+                                            <a href="{mcpbDownloadUrl}" class="btn btn-primary btn-sm ms-1" download>TYPO3 MCP Connector (.mcpb)</a>
+                                        </li>
+                                        <li>In Claude Desktop, open <strong>Settings → Desktop App → Extensions</strong> and drag the file there, or open the file directly</li>
+                                        <li>Fill in the TYPO3 URL <code>{baseUrl}</code> and an OAuth token (create one in the <strong>Active OAuth Tokens</strong> section below)</li>
                                     </ol>
                                 </div>
 

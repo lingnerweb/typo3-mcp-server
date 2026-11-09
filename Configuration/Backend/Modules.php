@@ -18,6 +18,10 @@ return [
             '_default' => [
                 'target' => \Hn\McpServer\Controller\McpServerModuleController::class . '::mainAction',
             ],
+            'download_mcpb' => [
+                'path' => '/download-mcpb',
+                'target' => \Hn\McpServer\Controller\McpServerModuleController::class . '::downloadMcpbAction',
+            ],
         ],
     ],
 ];

@@ -6,7 +6,7 @@
  * to be installed on the client. The script forwards every JSON-RPC message
  * from stdin to the remote /mcp endpoint and writes the answers to stdout.
  *
- * Authentication uses a personal MCP token from the TYPO3 backend module
+ * Authentication uses a personal OAuth token from the TYPO3 backend module
  * "MCP Server", sent as Bearer token. This avoids the OAuth login flow, which
  * is harder to set up for every team member.
  *
@@ -121,7 +121,7 @@ function parseMessages(response) {
 function describeHttpError(response) {
     const snippet = response.body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
     if (response.status === 401) {
-        return `HTTP 401: MCP token missing, invalid or expired. Create a new one in the TYPO3 backend module "MCP Server". ${snippet}`;
+        return `HTTP 401: OAuth token missing, invalid or expired. Create a new one in the TYPO3 backend module "MCP Server". ${snippet}`;
     }
     return `HTTP ${response.status} from ${endpoint.host}: ${snippet}`;
 }
@@ -231,7 +231,7 @@ function handleLine(line) {
 }
 
 if (!TOKEN) {
-    log('no MCP token configured - requests will be rejected with 401');
+    log('no OAuth token configured - requests will be rejected with 401');
 }
 log(`forwarding to ${endpoint ? endpoint.origin + endpoint.pathname : SERVER_URL}`);
 

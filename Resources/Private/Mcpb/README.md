@@ -1,27 +1,17 @@
-# Claude Desktop extension (.mcpb)
+# TYPO3 MCP Connector (.mcpb)
 
-Packs a small bridge into a Claude Desktop extension, so team members can
-connect to a TYPO3 site by double-clicking a file instead of setting up a
-connector by hand. The bridge runs on Claude Desktop's built-in Node.js and
-needs no other software, also on Windows.
-
-## Build
-
-```bash
-Resources/Private/Mcpb/build.sh https://dev.example.com "Example (dev)"
-```
-
-Writes `example-dev.mcpb` to the current directory. The URL argument is
-optional and only pre-fills the URL field. The file contains no secrets and can
-be shared with the team.
+A Claude Desktop extension that connects to a TYPO3 site running
+EXT:mcp_server. It runs on Claude Desktop's built-in Node.js and needs no other
+software, also on Windows.
 
 ## Install
 
-1. Double-click the `.mcpb` file, or drag it into Claude Desktop under
-   Settings > Extensions.
-2. Enter the TYPO3 URL (if not pre-filled) and your personal MCP token. Create
-   the token in the TYPO3 backend under User > MCP Server > Create Token.
-3. Enable the extension.
+1. Download the file in the TYPO3 backend under User > MCP Server >
+   Claude Desktop.
+2. In Claude Desktop, open Settings > Desktop App > Extensions and drag the
+   file there, or open the file directly.
+3. Fill in the TYPO3 URL and an OAuth token. Create the token in the TYPO3
+   backend under User > MCP Server > Active OAuth Tokens.
 
 The token is stored by Claude Desktop in the operating system's credential
 store and sent as Bearer token. Errors end up in Claude Desktop's MCP log

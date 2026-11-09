@@ -1,10 +1,10 @@
 {
   "manifest_version": "0.2",
-  "name": "typo3-mcp",
-  "display_name": "TYPO3",
+  "name": "typo3-mcp-connector",
+  "display_name": "TYPO3 MCP Connector",
   "version": "1.0.0",
   "description": "Connects Claude Desktop to a TYPO3 site running EXT:mcp_server.",
-  "long_description": "Connects Claude Desktop to the TYPO3 MCP server. Enter the site URL and your personal MCP token in the extension settings. Create the token in the TYPO3 backend under User > MCP Server > Create Token.",
+  "long_description": "Connects Claude Desktop to the TYPO3 MCP server. Enter the TYPO3 URL and an OAuth token in the extension settings. Create the token in the TYPO3 backend under User > MCP Server.",
   "author": {
     "name": "LINGNER.COM"
   },
@@ -31,8 +31,8 @@
     },
     "token": {
       "type": "string",
-      "title": "MCP token",
-      "description": "Personal token from the TYPO3 backend: User > MCP Server > Create Token.",
+      "title": "OAuth token",
+      "description": "Personal token from the TYPO3 backend: User > MCP Server > Active OAuth Tokens.",
       "sensitive": true,
       "required": true
     }
