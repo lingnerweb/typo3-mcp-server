@@ -75,6 +75,21 @@ class FileUploadService implements SingletonInterface
      * Accepts "" (default upload folder), "/path/in/default/storage" and
      * combined identifiers like "2:/path".
      */
+    /**
+     * Storage 0 is TYPO3's fallback storage: it spans the whole public web root
+     * and has no permission model, so applyUserPermissionsToStorage() cannot
+     * restrict it to file mounts. Core refuses it for all backend file
+     * operations (ExtendedFileUtility::getFileObject), and so do we.
+     */
+    private function assertNotFallbackStorage(ResourceStorage $storage): void
+    {
+        if ($storage->isFallbackStorage()) {
+            throw new \InvalidArgumentException(
+                'Uploading outside of a configured file storage is not allowed. Use a target folder like "1:/user_upload/".'
+            );
+        }
+    }
+
     public function resolveTargetFolder(string $targetFolder): Folder
     {
         $storageRepository = GeneralUtility::makeInstance(StorageRepository::class);
@@ -86,6 +101,7 @@ class FileUploadService implements SingletonInterface
                     'No default upload folder available for this user. Pass an explicit "targetFolder".'
                 );
             }
+            $this->assertNotFallbackStorage($folder->getStorage());
             $this->applyUserPermissionsToStorage($folder->getStorage());
             return $folder;
         }
@@ -107,6 +123,7 @@ class FileUploadService implements SingletonInterface
         if ($storage === null || !$storage->isOnline()) {
             throw new \InvalidArgumentException('No usable file storage found for target folder "' . $targetFolder . '".');
         }
+        $this->assertNotFallbackStorage($storage);
         $this->applyUserPermissionsToStorage($storage);
 
         $segments = GeneralUtility::trimExplode('/', $path, true);

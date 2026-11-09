@@ -18,6 +18,7 @@ use TYPO3\CMS\Core\Context\Context;
 use TYPO3\CMS\Core\Context\LanguageAspect;
 use Hn\McpServer\Service\SiteInformationService;
 use Hn\McpServer\Service\LanguageService;
+use Hn\McpServer\Service\PageAccessService;
 use Hn\McpServer\Service\TableAccessService;
 use Hn\McpServer\MCP\Tool\Record\AbstractRecordTool;
 use Hn\McpServer\Database\Query\Restriction\WorkspaceDeletePlaceholderRestriction;
@@ -154,8 +155,21 @@ class GetPageTreeTool extends AbstractRecordTool
         $query = $queryBuilder->select('*')
             ->from('pages');
 
+        // Only pages inside the user's webmounts with show permission (null for admins)
+        $pageAccessService = GeneralUtility::makeInstance(PageAccessService::class);
+        $readablePageIds = $pageAccessService->getReadablePageIds();
+        $webmounts = array_map('intval', $GLOBALS['BE_USER']->returnWebmounts());
+
         // Filter by pid (parent ID) for the starting page
-        if ($startPage === 0) {
+        if ($startPage === 0 && $readablePageIds !== null && !in_array(0, $webmounts, true)) {
+            // Restricted users without a root mount: their webmounts are the tree roots,
+            // as in the backend page tree
+            $mountRoots = array_values(array_intersect($webmounts, $readablePageIds));
+            $query->where(
+                $mountRoots === [] ? '1 = 0' : $queryBuilder->expr()->in('uid', $mountRoots),
+                $queryBuilder->expr()->eq('sys_language_uid', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER))
+            );
+        } elseif ($startPage === 0) {
             // Root level pages have pid=0
             $query->where(
                 $queryBuilder->expr()->eq('pid', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER)),
@@ -167,6 +181,11 @@ class GetPageTreeTool extends AbstractRecordTool
                 $queryBuilder->expr()->eq('pid', $queryBuilder->createNamedParameter($startPage, ParameterType::INTEGER)),
                 $queryBuilder->expr()->eq('sys_language_uid', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER))
             );
+        }
+
+        $pageRestriction = $pageAccessService->buildRestriction($queryBuilder, 'pages');
+        if ($pageRestriction !== null) {
+            $query->andWhere($pageRestriction);
         }
 
         // Order by sorting
@@ -277,6 +296,11 @@ class GetPageTreeTool extends AbstractRecordTool
                 $queryBuilder->expr()->eq('pid', $queryBuilder->createNamedParameter($pageId, ParameterType::INTEGER)),
                 $queryBuilder->expr()->eq('sys_language_uid', $queryBuilder->createNamedParameter(0, ParameterType::INTEGER))
             );
+
+        $pageRestriction = GeneralUtility::makeInstance(PageAccessService::class)->buildRestriction($queryBuilder, 'pages');
+        if ($pageRestriction !== null) {
+            $query->andWhere($pageRestriction);
+        }
 
         return (int)$query->executeQuery()->fetchOne();
     }

@@ -10,6 +10,7 @@ use Hn\McpServer\Event\BeforeRecordWriteEvent;
 use Hn\McpServer\Exception\DatabaseException;
 use Hn\McpServer\Exception\ValidationException;
 use Hn\McpServer\Service\LanguageService;
+use Hn\McpServer\Service\PageAccessService;
 use Mcp\Types\CallToolResult;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use TYPO3\CMS\Backend\Utility\BackendUtility;
@@ -561,6 +562,17 @@ class WriteTableTool extends AbstractRecordTool
 
         // Resolve the live UID to workspace UID (once, used throughout)
         $workspaceUid = $this->resolveToWorkspaceUid($table, $uid);
+
+        // Relation fields are written through their child records, so the parent is never
+        // checked for them: when nothing else is updated, DataHandler does not run for the
+        // parent, and when it does, it may refuse the parent fields without an error. Without
+        // this check, an editor could change file references and inline children of pages
+        // they may not edit, or of editlocked and language-restricted records.
+        if (!empty($inlineRelations) && !$this->canUpdateRecord($table, $workspaceUid)) {
+            return $this->createErrorResult(
+                'Error updating record: Attempt to modify record ' . $table . ':' . $uid . ' without permission'
+            );
+        }
 
         // Only run the field datamap if there are actual fields to write.
         // A pid-only move with no field changes leaves $data empty, and
@@ -2207,7 +2219,9 @@ class WriteTableTool extends AbstractRecordTool
         // which is what the LLM sees from ReadTable output.
         // We fetch all fields because workspaceOL needs uid and workspace metadata fields.
         $record = BackendUtility::getRecord($table, $uid);
-        if (!$record) {
+        if (!$record || !$this->isRecordVisibleToUser($table, $record)) {
+            // Same answer as for a nonexistent uid: the comparison below would
+            // otherwise work as an oracle on records the user cannot read
             throw new ValidationException(["Record {$uid} not found in table '{$table}'"]);
         }
         BackendUtility::workspaceOL($table, $record);
@@ -2735,6 +2749,52 @@ class WriteTableTool extends AbstractRecordTool
      * Resolve a live UID to its workspace version
      * Used for update/delete operations where we receive a live UID but need the workspace version
      */
+    /**
+     * Whether the user could see this row through the read tools: it must be a
+     * live row or belong to the current workspace (other workspaces' drafts and
+     * placeholders are hidden by WorkspaceRestriction there), and it must lie on
+     * a page the user may read.
+     */
+    protected function isRecordVisibleToUser(string $table, array $record): bool
+    {
+        if (BackendUtility::isTableWorkspaceEnabled($table)) {
+            $recordWorkspace = (int)($record['t3ver_wsid'] ?? 0);
+            $currentWorkspace = (int)($GLOBALS['BE_USER']->workspace ?? 0);
+            if ($recordWorkspace !== 0 && $recordWorkspace !== $currentWorkspace) {
+                return false;
+            }
+        }
+
+        $pageAccessService = GeneralUtility::makeInstance(PageAccessService::class);
+        if ($table === 'pages') {
+            return $pageAccessService->canReadPage((int)$record['uid']);
+        }
+        $rootLevel = (int)($GLOBALS['TCA'][$table]['ctrl']['rootLevel'] ?? 0);
+        $pid = (int)($record['pid'] ?? 0);
+        if ($rootLevel === 1 || ($rootLevel === -1 && $pid === 0)) {
+            return true;
+        }
+        return $pageAccessService->canReadPage($pid);
+    }
+
+    /**
+     * The checks DataHandler applies to a regular field update of the record:
+     * page/record permissions (PAGE_EDIT for pages, CONTENT_EDIT otherwise),
+     * editlock, language and authMode.
+     */
+    protected function canUpdateRecord(string $table, int $uid): bool
+    {
+        $backendUser = $GLOBALS['BE_USER'];
+        if ($backendUser->isAdmin()) {
+            return true;
+        }
+        $dataHandler = GeneralUtility::makeInstance(DataHandler::class);
+        $dataHandler->BE_USER = $backendUser;
+        $dataHandler->start([], []);
+        return $dataHandler->checkRecordUpdateAccess($table, $uid)
+            && $backendUser->recordEditAccessInternals($table, $uid);
+    }
+
     protected function resolveToWorkspaceUid(string $table, int $liveUid): int
     {
         $currentWorkspace = $GLOBALS['BE_USER']->workspace ?? 0;

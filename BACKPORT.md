@@ -101,6 +101,20 @@ with "call to undefined method" and the method has to be added there.
   public 12.4 releases because of security advisories (TYPO3 12 is in ELTS), so
   those jobs disable advisory blocking. This only affects CI.
 
+### 5. Additions beyond the port
+
+These are not TYPO3 12 related and are candidates for an upstream pull request.
+
+| Change | Files |
+|---|---|
+| The module status check uses `auth_header_detected` instead of `headers_received.authorization`: behind PHP-FPM the header arrives as `REDIRECT_HTTP_AUTHORIZATION`, which the endpoint already accepts. | `Resources/Public/JavaScript/mcp-module.js` |
+| Security: read tools respect page permissions and webmounts (new `PageAccessService`, applied via `BeforeRecordReadEvent` and in GetPage/GetPageTree). | `Classes/Service/PageAccessService.php`, `Classes/EventListener/PagePermissionRestrictionListener.php`, `Classes/MCP/Tool/GetPageTool.php`, `Classes/MCP/Tool/GetPageTreeTool.php` |
+| Security: uploads refuse the fallback storage `0:/`, which bypassed file mounts (same rule as core `ExtendedFileUtility`). | `Classes/Service/FileUploadService.php` |
+| Security: updates with inline/file fields require edit permission on the parent record (page edit, editlock, language, authMode). | `Classes/MCP/Tool/Record/WriteTableTool.php` |
+| Security: `search_replace` only reads records of live or the current workspace on readable pages; other records get the same answer as a nonexistent uid. | `Classes/MCP/Tool/Record/WriteTableTool.php` |
+
+Regression tests for the security changes: `Tests/Functional/Security/PermissionRegressionTest.php`.
+
 ## Changes to tests
 
 Only where TYPO3 12 behaves differently from 13. All adapted tests still pass on

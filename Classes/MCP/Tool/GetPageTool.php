@@ -25,6 +25,7 @@ use TYPO3\CMS\Core\Context\LanguageAspect;
 use Hn\McpServer\MCP\Tool\Record\AbstractRecordTool;
 use Hn\McpServer\Service\SiteInformationService;
 use Hn\McpServer\Service\LanguageService as McpLanguageService;
+use Hn\McpServer\Service\PageAccessService;
 use Hn\McpServer\Utility\RecordFormattingUtility;
 use Hn\McpServer\Service\TableAccessService;
 
@@ -131,6 +132,11 @@ class GetPageTool extends AbstractRecordTool
 
         if ($uid <= 0) {
             throw new \InvalidArgumentException('Invalid page UID or URL. Please provide a valid page ID or URL.');
+        }
+
+        // Same answer as for a nonexistent page, so page permissions cannot be probed
+        if (!GeneralUtility::makeInstance(PageAccessService::class)->canReadPage($uid)) {
+            throw new \RuntimeException('Page not found: ' . $uid);
         }
 
         // Get page data (with language overlay if applicable)

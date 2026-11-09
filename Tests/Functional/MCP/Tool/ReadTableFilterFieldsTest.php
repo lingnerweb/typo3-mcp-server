@@ -250,6 +250,9 @@ class ReadTableFilterFieldsTest extends AbstractFunctionalTest
             'deleted' => 0,
         ]);
 
+        // Reads are limited to pages the editor may show
+        $this->getConnectionForTable('pages')->update('pages', ['perms_userid' => 99, 'perms_user' => 1], ['uid' => 1]);
+
         $user = $this->setupDefaultBackendUser(99);
         $user->groupData['tables_select'] = 'pages,tt_content';
         $user->groupData['tables_modify'] = 'pages,tt_content';

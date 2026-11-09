@@ -620,7 +620,9 @@ class McpModule {
         })
             .then(response => {
                 return response.json().then(data => {
-                    if (data.headers_received && data.headers_received.authorization) {
+                    // Behind PHP-FPM + mod_rewrite the header usually arrives as
+                    // REDIRECT_HTTP_AUTHORIZATION, which the endpoint accepts too
+                    if (data.auth_header_detected) {
                         this.setEndpointStatus(element, 'success', 'MCP endpoint is accessible and can receive Authorization headers');
                         const warningDiv = document.getElementById('auth-header-warning');
                         if (warningDiv) warningDiv.style.display = 'none';
