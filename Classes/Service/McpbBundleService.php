@@ -42,7 +42,7 @@ class McpbBundleService
 
     /**
      * "TYPO3 MCP Connector (<instance name>).mcpb", so downloads from several
-     * instances (dev, live, other customers) stay apart.
+     * instances (DDEV, dev, stage, live) stay apart.
      */
     private function buildFilename(string $instanceName): string
     {

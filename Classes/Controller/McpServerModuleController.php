@@ -9,7 +9,6 @@ use Psr\Http\Message\ServerRequestInterface;
 use TYPO3\CMS\Backend\Template\ModuleTemplateFactory;
 use TYPO3\CMS\Backend\Routing\UriBuilder;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
-use TYPO3\CMS\Core\Configuration\ConfigurationManager;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use TYPO3\CMS\Core\Page\PageRenderer;
@@ -221,10 +220,9 @@ class McpServerModuleController
             return new HtmlResponse('Access denied', 403);
         }
 
-        $bundle = $this->mcpbBundleService->build(
-            $this->getRequestBaseUrl($request),
-            $this->getConfiguredSiteName()
-        );
+        $baseUrl = $this->getRequestBaseUrl($request);
+        // The host tells instances apart (DDEV, dev, stage, live) without any configuration
+        $bundle = $this->mcpbBundleService->build($baseUrl, (string)parse_url($baseUrl, PHP_URL_HOST));
 
         $response = (new Response())
             ->withHeader('Content-Type', 'application/zip')
@@ -242,21 +240,6 @@ class McpServerModuleController
     {
         $asciiFallback = (string)preg_replace('/[^\x20-\x7E]|["\\\\]/', '_', $filename);
         return sprintf('attachment; filename="%s"; filename*=UTF-8\'\'%s', $asciiFallback, rawurlencode($filename));
-    }
-
-    /**
-     * Site name as written in settings.php. The runtime value may carry
-     * additions from additional.php (environment, database name, server IP)
-     * that do not belong in a file name.
-     */
-    private function getConfiguredSiteName(): string
-    {
-        try {
-            return (string)GeneralUtility::makeInstance(ConfigurationManager::class)
-                ->getLocalConfigurationValueByPath('SYS/sitename');
-        } catch (\Throwable) {
-            return '';
-        }
     }
 
     private function getSiteName(): string
