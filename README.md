@@ -11,6 +11,9 @@ composer require lingner/typo3-mcp-server
 The package replaces `hn/typo3-mcp-server`; extension key (`mcp_server`) and namespace are unchanged.
 All changes against the original are documented in [BACKPORT.md](BACKPORT.md).
 
+[Resources/Private/Mcpb](Resources/Private/Mcpb/README.md) builds a Claude Desktop
+extension that asks for the site URL and a personal MCP token.
+
 ## License
 
 GPL-2.0-or-later, like the original. See [LICENSE](LICENSE).
